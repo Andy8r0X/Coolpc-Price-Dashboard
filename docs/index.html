@@ -6,14 +6,26 @@
   <title>原價屋價格儀表板</title>
   <link rel="stylesheet" href="./style.css" />
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <!-- 在頁面載入前先套用主題，避免閃爍 -->
+  <script>
+    (function () {
+      const saved = localStorage.getItem('theme');
+      const theme = saved || 'light';
+      document.documentElement.setAttribute('data-theme', theme);
+    })();
+  </script>
 </head>
 <body>
   <header class="site-header">
     <div class="brand">🖥️ 原價屋價格儀表板</div>
-    <div class="meta" id="meta">載入中…</div>
+    <div class="header-right">
+      <div class="meta" id="meta">載入中…</div>
+      <button id="themeToggle" class="theme-toggle" title="切換深色/淺色">🌙</button>
+    </div>
   </header>
 
   <main class="container">
+    <!-- 以下不變 -->
     <section class="stats" id="stats"></section>
 
     <section class="filter-bar">
@@ -35,7 +47,6 @@
     <section class="grid" id="grid"></section>
   </main>
 
-  <!-- 商品詳情 Modal -->
   <div class="modal" id="modal">
     <div class="modal-content">
       <button class="modal-close" id="modalClose">✕</button>
