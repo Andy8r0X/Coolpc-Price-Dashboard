@@ -7,6 +7,26 @@ import * as cheerio from 'cheerio';
 export function parseEvaluateHtml(html) {
   const $ = cheerio.load(html);
 
+  // ===== 解析診斷 =====
+  console.log('[parse-diag] tr 總數:', $('tr').length);
+  console.log('[parse-diag] td.t 總數:', $('td.t').length);
+  console.log('[parse-diag] select 總數:', $('select').length);
+  console.log('[parse-diag] select[name^="n"] 總數:', $('select[name^="n"]').length);
+  console.log('[parse-diag] option 總數:', $('option').length);
+  console.log('[parse-diag] optgroup 總數:', $('optgroup').length);
+
+  // 前 3 個 td.t
+  $('td.t').slice(0, 3).each((i, el) => {
+    console.log(`[parse-diag] td.t[${i}]: "${$(el).text().slice(0, 60)}"`);
+  });
+
+  // 前 3 個 select
+  $('select').slice(0, 3).each((i, el) => {
+    const $sel = $(el);
+    console.log(`[parse-diag] select[${i}] name=${$sel.attr('name')}, options=${$sel.find('option').length}`);
+  });
+  // ===== 診斷結束 =====
+
   // 抓估價時間
   const timeMatch = html.match(/估價時間：\s*(\d{4}\/\d{2}\/\d{2}\s+\d{2}:\d{2}:\d{2})/);
   const snapshotTime = timeMatch
@@ -14,16 +34,15 @@ export function parseEvaluateHtml(html) {
     : new Date().toISOString().slice(0, 19).replace('T', ' ');
 
   const categories = [];
-  const seenNames = new Set(); // 去重
+  const seenNames = new Set();
 
   // 走訪每個分類 <tr>
-  // 分類特徵：有 <td class="t"> 且裡面有 <select name="nX">
   $('tr').each((_, tr) => {
     const $tr = $(tr);
     const $catTd = $tr.children('td.t');
     if ($catTd.length === 0) return;
 
-    const categoryName = cleanText($catTd.first());
+    const categoryName = $catTd.first().text().replace(/\s+/g, ' ').trim();
     if (!categoryName) return;
 
     // 找這個分類的 select
@@ -36,18 +55,18 @@ export function parseEvaluateHtml(html) {
     $select.find('option').each((__, opt) => {
       const $opt = $(opt);
 
-      // 跳過：disabled、統計資訊（value=0 且有 class="bf"）、空選項
+      // 跳過：disabled、統計資訊（value=0 且有 class="bf"）
       if ($opt.attr('disabled') !== undefined) return;
       if ($opt.attr('class') === 'bf') return;
 
-      const label = cleanText($opt);
+      const label = $opt.text().replace(/\s+/g, ' ').trim();
       const value = $opt.attr('value') || '';
 
-      // 跳過提示訊息（❤ 開頭、↪ 開頭、value=0 的統計）
+      // 跳過提示訊息
       if (!label) return;
       if (label.startsWith('❤')) return;
       if (label.startsWith('↪')) return;
-      if (label.startsWith('　　')) return; // 全形空白開頭的提示
+      if (label.startsWith('　　')) return;
       if (value === '0') return;
 
       // 解析商品名與價格
@@ -66,7 +85,7 @@ export function parseEvaluateHtml(html) {
       items.push({
         name: parsed.name,
         price: parsed.price,
-        note: parsed.note || '',
+        note: '',
         isHot,
         isPriceChanged,
       });
@@ -74,20 +93,16 @@ export function parseEvaluateHtml(html) {
 
     if (items.length > 0) {
       categories.push({ name: categoryName, items });
+      console.log(`[parse-diag] 分類「${categoryName}」: ${items.length} 個商品`);
     }
   });
 
+  console.log(`[parse-diag] 共 ${categories.length} 個分類有商品`);
   return { snapshotTime, categories };
 }
 
 /**
  * 從 option 文字抓出商品名與價格
- *
- * 範例：
- *   "ASUS Ascent QSFP 連接線【現貨】, $3990 ★"
- *   "ASUS Ascent GX10 GB10 / 128G / Gen4 1TB SSD【現貨】, $175900 ◆ ★"
- *   "i5-13420H / 16G / 1T / WIN11 / 5060 / 330W電供▼下殺到 9/20 23:59, $46990↘$39990 ◆ ★"
- *   "DELL Base Ryzen AI 7 350/16G/512G/14吋 銀｛DC14255-R1808STW｝▼下殺到 9/15 23:59, $45990↘$40999 ◆ ★"
  */
 function parseOptionLabel(label) {
   if (!label) return null;
@@ -96,7 +111,6 @@ function parseOptionLabel(label) {
   let text = label.replace(/[★◆\s]+$/g, '').trim();
 
   // 找價格：抓「最後一個」$ 後面的數字
-  // 因為特價商品格式是 $原價↘$特價，我們要取最後一個
   const priceMatches = [...text.matchAll(/\$\s*([\d,]+)/g)];
   if (priceMatches.length === 0) return null;
 
@@ -107,18 +121,11 @@ function parseOptionLabel(label) {
   // 商品名：價格之前的所有文字
   let name = text.slice(0, lastMatch.index).trim();
 
-  // 移除「▼下殺到 ...」這類的促銷字串
+  // 移除促銷字串
   name = name.replace(/▼.*$/, '').trim();
-
-  // 移除尾端的逗號、空白
   name = name.replace(/[,，\s]+$/, '').trim();
 
   if (!name || name.length < 2) return null;
 
   return { name, price };
-}
-
-function cleanText($el) {
-  if (!$el || $el.length === 0) return '';
-  return $el.text().replace(/\s+/g, ' ').trim();
 }
