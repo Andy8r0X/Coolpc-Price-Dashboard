@@ -14,7 +14,7 @@ function normalizeName(name) {
   return String(name)
     .toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/【(現貨|訂|限量|限組裝|預購|缺貨|搭機|加購)】/g, '')
+    .replace(/【(現貨|訂|限量|預購|缺貨|搭機|加購)】/g, '')
     .replace(/【[^】]*】/g, '')
     .replace(/[★◆▼↘]/g, '')
     .replace(/＄|\$|元/g, '')
