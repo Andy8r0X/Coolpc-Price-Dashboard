@@ -1,34 +1,42 @@
 import { readFile, writeFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 
 const ROOT = path.resolve(process.cwd());
 const DOCS_DATA = path.join(ROOT, 'docs', 'data');
 const PRICES_DIR = path.join(DOCS_DATA, 'prices');
 
-// 壓縮參數
-const MIN_CHANGE_PCT = 0;      // 0 = 只壓縮「完全相同」的價格；0.5 = 變動小於 0.5% 不記
-const MAX_TREND_POINTS = 100;  // 壓縮後最多留幾個點（保險）
+const MIN_CHANGE_PCT = 0;
+const MAX_TREND_POINTS = 100;
 
+/**
+ * 只移除「純狀態詞」和「價格裝飾符號」
+ * 不移除冒號、斜線、規格差異
+ */
 function normalizeName(name) {
   return String(name)
     .toUpperCase()
     .replace(/\s+/g, '')
-    .replace(/【(現貨|訂|限量|預購|缺貨|搭機|加購)】/g, '')
-    .replace(/【[^】]*】/g, '')
+    // 移除純狀態詞
+    .replace(/【現貨】|【訂】|【限量】|【預購】|【缺貨】/g, '')
+    // 移除價格裝飾符號
     .replace(/[★◆▼↘]/g, '')
     .replace(/＄|\$|元/g, '')
-    .replace(/[，,、]/g, '')
     .trim();
 }
 
+/**
+ * 用 SHA-256 產生穩定 ID（不碰撞）
+ */
 function makeId(name) {
-  return Buffer.from(normalizeName(name)).toString('base64url').slice(0, 24);
+  const normalized = normalizeName(name);
+  const hash = createHash('sha256').update(normalized).digest();
+  return hash.toString('base64url').slice(0, 22);
 }
 
 /**
- * 壓縮時間序列：
- * 只保留價格變化的點（及終點）
+ * 壓縮時間序列：只保留價格變化的點
  */
 function compressPoints(points, minChangePct = 0) {
   if (points.length <= 2) return points;
@@ -42,13 +50,12 @@ function compressPoints(points, minChangePct = 0) {
       ? 0
       : Math.abs((curr.p - lastKept.p) / lastKept.p) * 100;
 
-    if (diffPct >= minChangePct && curr.p !== lastKept.p) {
+    if (curr.p !== lastKept.p && diffPct >= minChangePct) {
       result.push(curr);
       lastKept = curr;
     }
   }
 
-  // 確保終點在裡面
   const last = points[points.length - 1];
   if (result[result.length - 1].t !== last.t) {
     result.push(last);
@@ -110,7 +117,7 @@ async function main() {
   console.log(`[process] 最早: ${snapshots[0].snapshotTime}`);
   console.log(`[process] 最新: ${latestSnapshotTime}`);
 
-  // 最新快照的商品集合
+  // 最新快照的商品集合（用 normalizeName 當 key）
   const latestNames = new Set();
   for (const snap of snapshots) {
     if (snap.snapshotTime !== latestSnapshotTime) continue;
@@ -160,16 +167,18 @@ async function main() {
     const pts = entry.points;
     if (pts.length === 0) continue;
 
+    // 檢查是否有「上下波浪」：同一 key 的價格在同一天內多次變動
+    // 這通常是「兩個不同商品被合併」的徵兆
+    // 我們印出前 5 個有問題的
+    // （可選，debug 用）
+
     const latest = pts[pts.length - 1];
     const first = pts[0];
     const prices = pts.map((p) => p.p);
     const change = latest.p - first.p;
     const changePct = first.p ? +((change / first.p) * 100).toFixed(2) : 0;
 
-    // 壓縮
     let compressed = compressPoints(pts, MIN_CHANGE_PCT);
-
-    // 保險：如果壓縮後還是太多，再截斷
     if (compressed.length > MAX_TREND_POINTS) {
       compressed = compressed.slice(-MAX_TREND_POINTS);
     }
