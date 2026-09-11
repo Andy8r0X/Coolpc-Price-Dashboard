@@ -11,27 +11,29 @@ const MIN_CHANGE_PCT = 0;
 const MAX_TREND_POINTS = 100;
 
 /**
- * 只移除「純狀態詞」和「價格裝飾符號」
- * 不移除冒號、斜線、規格差異
+ * 寬鬆正規化：用來「合併同商品的不同名稱版本」
+ * 移除所有裝飾性內容，只留核心規格
  */
-function normalizeName(name) {
+function looseKey(name) {
   return String(name)
     .toUpperCase()
     .replace(/\s+/g, '')
-    // 移除純狀態詞
-    .replace(/【現貨】|【訂】|【限量】|【預購】|【缺貨】/g, '')
-    // 移除價格裝飾符號
+    // 移除所有 (...)
+    .replace(/[（(][^)）]*[)）]/g, '')
+    // 移除標點與裝飾
     .replace(/[★◆▼↘]/g, '')
     .replace(/＄|\$|元/g, '')
+    .replace(/[，,、：:；;]/g, '')
+    // 移除斜線、減號、底線（讓 讀7300/寫6000 和 讀7300 寫6000 對齊）
+    .replace(/[\/\\\-_]/g, '')
     .trim();
 }
 
 /**
- * 用 SHA-256 產生穩定 ID（不碰撞）
+ * 精確 ID：用最新名稱的 SHA-256
  */
 function makeId(name) {
-  const normalized = normalizeName(name);
-  const hash = createHash('sha256').update(normalized).digest();
+  const hash = createHash('sha256').update(String(name)).digest();
   return hash.toString('base64url').slice(0, 22);
 }
 
@@ -117,28 +119,19 @@ async function main() {
   console.log(`[process] 最早: ${snapshots[0].snapshotTime}`);
   console.log(`[process] 最新: ${latestSnapshotTime}`);
 
-  // 最新快照的商品集合（用 normalizeName 當 key）
-  const latestNames = new Set();
-  for (const snap of snapshots) {
-    if (snap.snapshotTime !== latestSnapshotTime) continue;
-    for (const cat of snap.categories || []) {
-      for (const item of cat.items || []) {
-        latestNames.add(normalizeName(item.name));
-      }
-    }
-  }
-  console.log(`[process] 最新快照有 ${latestNames.size} 個商品`);
+  // 用「寬鬆 key」建時間序列
+  const series = new Map();  // looseKey -> { name, category, points, latestTime }
+  // 同時記錄最新名稱（用來當 ID 和顯示）
+  const latestNames = new Map();  // looseKey -> 最新名稱
 
-  // 建時間序列
-  const series = new Map();
   for (const snap of snapshots) {
     for (const cat of snap.categories || []) {
       for (const item of cat.items || []) {
-        const key = normalizeName(item.name);
+        const key = looseKey(item.name);
         if (!key) continue;
+
         if (!series.has(key)) {
           series.set(key, {
-            id: makeId(item.name),
             name: item.name,
             category: cat.name || '未分類',
             points: [],
@@ -150,10 +143,16 @@ async function main() {
           hot: item.isHot ? 1 : 0,
           changed: item.isPriceChanged ? 1 : 0,
         });
+
+        // 更新最新名稱（用時間戳比較，最新的贏）
+        const existing = latestNames.get(key);
+        if (!existing || snap.snapshotTime > existing.t) {
+          latestNames.set(key, { name: item.name, t: snap.snapshotTime });
+        }
       }
     }
   }
-  console.log(`[process] ${series.size} unique products（全部歷史）`);
+  console.log(`[process] ${series.size} unique products（寬鬆合併後）`);
 
   const products = [];
   const trends = [];
@@ -162,33 +161,36 @@ async function main() {
   let compressedTotal = 0;
 
   for (const [key, entry] of series) {
-    if (!latestNames.has(key)) continue;
-
     const pts = entry.points;
     if (pts.length === 0) continue;
 
-    // 檢查是否有「上下波浪」：同一 key 的價格在同一天內多次變動
-    // 這通常是「兩個不同商品被合併」的徵兆
-    // 我們印出前 5 個有問題的
-    // （可選，debug 用）
+    // 只保留「最新快照」有的商品（用寬鬆 key 比對）
+    // 但因為我們已經用寬鬆 key 合併，所以只要有在最新快照出現過就留
+    // 這裡先不過濾，讓所有歷史商品都保留，避免「8月有9月沒有」的問題
 
-    const latest = pts[pts.length - 1];
-    const first = pts[0];
-    const prices = pts.map((p) => p.p);
+    const latestInfo = latestNames.get(key);
+    const displayName = latestInfo ? latestInfo.name : entry.name;
+    const id = makeId(displayName);
+
+    // 找最新價格
+    const sortedPts = [...pts].sort((a, b) => a.t.localeCompare(b.t));
+    const latest = sortedPts[sortedPts.length - 1];
+    const first = sortedPts[0];
+    const prices = sortedPts.map((p) => p.p);
     const change = latest.p - first.p;
     const changePct = first.p ? +((change / first.p) * 100).toFixed(2) : 0;
 
-    let compressed = compressPoints(pts, MIN_CHANGE_PCT);
+    let compressed = compressPoints(sortedPts, MIN_CHANGE_PCT);
     if (compressed.length > MAX_TREND_POINTS) {
       compressed = compressed.slice(-MAX_TREND_POINTS);
     }
 
-    rawTotal += pts.length;
+    rawTotal += sortedPts.length;
     compressedTotal += compressed.length;
 
     products.push({
-      id: entry.id,
-      name: entry.name,
+      id,
+      name: displayName,
       category: entry.category,
       price: latest.p,
       change,
@@ -200,8 +202,8 @@ async function main() {
     });
 
     trends.push({
-      id: entry.id,
-      name: entry.name,
+      id,
+      name: displayName,
       category: entry.category,
       current: latest.p,
       min: Math.min(...prices),
@@ -209,7 +211,7 @@ async function main() {
       change,
       changePct,
       points: compressed,
-      rawPointCount: pts.length,
+      rawPointCount: sortedPts.length,
     });
   }
 
