@@ -1,0 +1,62 @@
+name: Fetch Archive.org Snapshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'Start date (YYYYMMDD)'
+        default: '20260801'
+        required: true
+      end:
+        description: 'End date (YYYYMMDD)'
+        default: '20260930'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install deps
+        run: npm install
+
+      - name: Restore archive cache
+        uses: actions/cache@v4
+        with:
+          path: cache/archive
+          key: archive-cache-${{ github.run_id }}
+          restore-keys: |
+            archive-cache-
+
+      - name: Fetch archive snapshots
+        env:
+          START: ${{ github.event.inputs.start }}
+          END: ${{ github.event.inputs.end }}
+        run: node scripts/scrape-archive.mjs
+
+      - name: Process data
+        run: npm run process
+
+      - name: Commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "data: archive snapshots $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
