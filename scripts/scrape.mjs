@@ -18,6 +18,9 @@ async function ensureDirs() {
   }
 }
 
+import iconv from 'iconv-lite';
+import { Buffer } from 'node:buffer';
+
 async function fetchHtml(url) {
   console.log('[fetch] URL:', url);
 
@@ -29,6 +32,57 @@ async function fetchHtml(url) {
       'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
   });
+
+  console.log('[fetch] HTTP status:', res.status);
+  const contentType = res.headers.get('content-type') || '';
+  console.log('[fetch] content-type:', contentType);
+
+  // 用 arrayBuffer 抓原始 bytes
+  const arrayBuf = await res.arrayBuffer();
+  const buf = Buffer.from(arrayBuf);
+  console.log('[fetch] buffer bytes:', buf.length);
+
+  // 從 content-type 判斷編碼
+  let charset = 'utf-8';
+  const m = contentType.match(/charset=([^;]+)/i);
+  if (m) charset = m[1].trim().toLowerCase();
+  console.log('[fetch] detected charset:', charset);
+
+  // Big5 相關編碼統一用 big5 解
+  let iconvCharset = charset;
+  if (charset === 'big5' || charset === 'big5-hkscs' || charset === 'cp950') {
+    iconvCharset = 'big5';
+  }
+
+  // 用 iconv-lite 解碼
+  let html;
+  try {
+    html = iconv.decode(buf, iconvCharset);
+    console.log('[fetch] iconv.decode OK with', iconvCharset);
+  } catch (e) {
+    console.warn('[fetch] iconv.decode failed:', e.message);
+    console.warn('[fetch] falling back to utf-8');
+    html = iconv.decode(buf, 'utf-8');
+  }
+
+  console.log('[fetch] HTML length (chars):', html.length);
+
+  // 診斷
+  console.log('[diag] 包含 <select:', html.includes('<select'));
+  console.log('[diag] 包含 <option:', html.includes('<option'));
+  console.log('[diag] 包含 RTX:', html.includes('RTX'));
+  console.log('[diag] 包含 估價時間:', html.includes('估價時間'));
+  console.log('[diag] 包含 處理器 CPU:', html.includes('處理器 CPU'));
+
+  const optionCount = (html.match(/<option/g) || []).length;
+  console.log('[diag] <option> 數量:', optionCount);
+
+  // 印前 500 字，看中文正不正常
+  console.log('[diag] HTML 前 500 字:');
+  console.log(html.slice(0, 500));
+
+  return html;
+}
 
   console.log('[fetch] HTTP status:', res.status);
   console.log('[fetch] content-type:', res.headers.get('content-type'));
