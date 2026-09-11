@@ -19,7 +19,12 @@ async function ensureDirs() {
 async function fetchHtml() {
   console.log('[fetch]', URL);
   const res = await fetch(URL, {
-    headers: { 'user-agent': UA, 'accept-language': 'zh-TW,zh;q=0.9' },
+    headers: {
+      'user-agent': UA,
+      'accept-language': 'zh-TW,zh;q=0.9,en;q=0.8',
+      'referer': 'https://www.coolpc.com.tw/',
+      'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const html = await res.text();
