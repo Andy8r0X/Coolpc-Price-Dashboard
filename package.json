@@ -1,0 +1,16 @@
+{
+  "name": "coolpc-price-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "node scripts/scrape.mjs",
+    "process": "node scripts/process.mjs",
+    "scrape:archive": "MODE=archive node scripts/scrape.mjs",
+    "scrape:full": "MODE=full node scripts/scrape.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "undici": "^6.19.8"
+  }
+}
