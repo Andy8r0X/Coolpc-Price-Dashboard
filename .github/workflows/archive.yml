@@ -5,11 +5,11 @@ on:
     inputs:
       start:
         description: 'Start date (YYYYMMDD)'
-        default: '20260801'
+        default: '20240101'
         required: true
       end:
         description: 'End date (YYYYMMDD)'
-        default: '20260930'
+        default: '20260730'
         required: true
 
 permissions:
