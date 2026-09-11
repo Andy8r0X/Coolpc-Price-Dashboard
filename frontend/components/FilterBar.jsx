@@ -28,3 +28,14 @@ export default function FilterBar({
         <option value="priceAsc">價格低→高</option>
         <option value="name">名稱</option>
       </select>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)' }}>
+        <input type="checkbox" checked={onlyChanged} onChange={(e) => setOnlyChanged(e.target.checked)} />
+        只看價格異動
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--muted)' }}>
+        <input type="checkbox" checked={onlyHot} onChange={(e) => setOnlyHot(e.target.checked)} />
+        只看熱賣
+      </label>
+    </div>
+  );
+}
