@@ -10,7 +10,7 @@ export default function ProductCard({ product }) {
   const sparkPath = useMemo(() => buildSparkPath(product.spark || []), [product.spark]);
 
   return (
-    <Link href={`${base}/product/${product.id}/`} className="card">
+    <Link href={`${base}/product/?id=${product.id}`} className="card">
       <div className="title">{product.name}</div>
       <div className="meta">{product.category}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
