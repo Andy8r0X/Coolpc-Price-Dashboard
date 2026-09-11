@@ -11,8 +11,8 @@ const PRICES_DIR = path.join(DOCS_DATA, 'prices');
 const CACHE_DIR = path.join(ROOT, 'cache', 'archive');
 
 // 目標：只撈 2026-08-01 ~ 2026-09-30
-const START = '20260801';
-const END = '20260930';
+const START = process.env.START || '20260801';
+const END = process.env.END || '20260930';
 
 const TARGET = 'http://www.coolpc.com.tw/evaluate.php';
 const CDX_API = 'http://web.archive.org/cdx/search/cdx';
