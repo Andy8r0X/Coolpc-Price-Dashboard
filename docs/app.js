@@ -3,6 +3,38 @@ let allProducts = [];
 let allTrends = [];
 let chartInstance = null;
 
+// ===== 主題管理 =====
+function getTheme() {
+  return document.documentElement.getAttribute('data-theme') || 'light';
+}
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('theme', theme);
+  updateThemeButton(theme);
+  if (chartInstance) {
+    chartInstance.dispose();
+    chartInstance = null;
+  }
+}
+
+function updateThemeButton(theme) {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+  btn.title = theme === 'dark' ? '切換淺色' : '切換深色';
+}
+
+function initTheme() {
+  const theme = getTheme();
+  updateThemeButton(theme);
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    const next = getTheme() === 'dark' ? 'light' : 'dark';
+    setTheme(next);
+  });
+}
+// ===== 主題管理結束 =====
+
 async function loadJson(file) {
   const res = await fetch(`${BASE}/${file}`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`${file} not found`);
@@ -10,6 +42,8 @@ async function loadJson(file) {
 }
 
 async function init() {
+  initTheme();
+
   try {
     const [products, trends, meta] = await Promise.all([
       loadJson('products.json'),
@@ -52,7 +86,7 @@ function renderCategoryOptions(products) {
   const cats = [...new Set(products.map(p => p.category))].sort();
   const sel = document.getElementById('category');
   sel.innerHTML = '<option value="">全部分類</option>' +
-    cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    cats.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
 }
 
 function getFiltered() {
@@ -70,11 +104,11 @@ function getFiltered() {
 
   const sorted = [...list];
   switch (sort) {
-    case 'changeDesc': sorted.sort((a,b) => b.changePct - a.changePct); break;
-    case 'changeAsc':  sorted.sort((a,b) => a.changePct - b.changePct); break;
-    case 'priceDesc':  sorted.sort((a,b) => b.price - a.price); break;
-    case 'priceAsc':   sorted.sort((a,b) => a.price - b.price); break;
-    case 'name':       sorted.sort((a,b) => a.name.localeCompare(b.name)); break;
+    case 'changeDesc': sorted.sort((a, b) => b.changePct - a.changePct); break;
+    case 'changeAsc':  sorted.sort((a, b) => a.changePct - b.changePct); break;
+    case 'priceDesc':  sorted.sort((a, b) => b.price - a.price); break;
+    case 'priceAsc':   sorted.sort((a, b) => a.price - b.price); break;
+    case 'name':       sorted.sort((a, b) => a.name.localeCompare(b.name)); break;
   }
   return sorted;
 }
@@ -108,7 +142,6 @@ function renderGrid() {
       </div>`;
   }).join('');
 
-  // 綁點擊
   grid.querySelectorAll('.card').forEach(el => {
     el.addEventListener('click', () => openModal(el.dataset.id));
   });
@@ -120,12 +153,14 @@ function buildSpark(values) {
   const max = Math.max(...values);
   const range = max - min || 1;
   const stepX = 100 / (values.length - 1);
+  const theme = getTheme();
+  const stroke = theme === 'dark' ? '#4a9eff' : '#2563eb';
   const d = values.map((v, i) => {
     const x = i * stepX;
     const y = 28 - ((v - min) / range) * 26;
     return `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${y.toFixed(2)}`;
   }).join(' ');
-  return `<path d="${d}" fill="none" stroke="#4a9eff" stroke-width="1.5" />`;
+  return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.5" />`;
 }
 
 function openModal(id) {
@@ -134,35 +169,61 @@ function openModal(id) {
 
   document.getElementById('modalTitle').textContent = trend.name;
   document.getElementById('modalSub').textContent = trend.category;
-  document.getElementById('modalPrice').textContent = `NT$ ${trend.current.toLocaleString()}`;
+  document.getElementById('modalPrice').textContent =
+    `NT$ ${trend.current.toLocaleString()}`;
 
   document.getElementById('modal').classList.add('open');
 
   setTimeout(() => {
     const el = document.getElementById('chart');
-    if (!chartInstance) chartInstance = echarts.init(el, 'dark');
+    if (chartInstance) {
+      chartInstance.dispose();
+      chartInstance = null;
+    }
+    chartInstance = echarts.init(el);
+
+    const isDark = getTheme() === 'dark';
+    const textColor = isDark ? '#e6e8ee' : '#1a1d24';
+    const mutedColor = isDark ? '#8b93a7' : '#6b7280';
+    const gridColor = isDark ? '#262b36' : '#e3e6ea';
+    const lineColor = isDark ? '#4a9eff' : '#2563eb';
+    const tooltipBg = isDark ? '#171a21' : '#ffffff';
+    const tooltipBorder = isDark ? '#262b36' : '#e3e6ea';
+
     chartInstance.setOption({
       backgroundColor: 'transparent',
       grid: { left: 60, right: 20, top: 30, bottom: 40 },
-      tooltip: { trigger: 'axis' },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { color: textColor },
+      },
       xAxis: {
         type: 'category',
         data: trend.points.map(p => p.t.slice(0, 16)),
-        axisLabel: { color: '#8b93a7', fontSize: 11 },
+        axisLabel: { color: mutedColor, fontSize: 11 },
+        axisLine: { lineStyle: { color: gridColor } },
       },
       yAxis: {
-        type: 'value', scale: true,
-        axisLabel: { color: '#8b93a7', fontSize: 11, formatter: v => v.toLocaleString() },
-        splitLine: { lineStyle: { color: '#262b36' } },
+        type: 'value',
+        scale: true,
+        axisLabel: {
+          color: mutedColor,
+          fontSize: 11,
+          formatter: v => v.toLocaleString(),
+        },
+        splitLine: { lineStyle: { color: gridColor } },
       },
       series: [{
         type: 'line',
         data: trend.points.map(p => p.p),
         smooth: true,
-        lineStyle: { color: '#4a9eff', width: 2 },
-        itemStyle: { color: '#4a9eff' },
+        lineStyle: { color: lineColor, width: 2 },
+        itemStyle: { color: lineColor },
       }],
     }, true);
+
     chartInstance.resize();
   }, 50);
 }
@@ -172,7 +233,7 @@ function closeModal() {
 }
 
 function bindEvents() {
-  ['search','category','sort','onlyChanged','onlyHot'].forEach(id => {
+  ['search', 'category', 'sort', 'onlyChanged', 'onlyHot'].forEach(id => {
     const el = document.getElementById(id);
     el.addEventListener('input', renderGrid);
     el.addEventListener('change', renderGrid);
@@ -188,7 +249,11 @@ function bindEvents() {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
   }[c]));
 }
 
