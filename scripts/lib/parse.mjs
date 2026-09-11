@@ -69,7 +69,18 @@ export function parseEvaluateHtml(html) {
 }
 
 function cleanText(s) {
-  return (s || '').replace(/\s+/g, ' ').trim();
+  if (s === null || s === undefined) return '';
+  // 若傳進來是 cheerio 物件或 DOM 節點，先轉成字串
+  if (typeof s === 'object') {
+    if (typeof s.text === 'function') {
+      try { s = s.text(); } catch { s = ''; }
+    } else if (typeof s.toString === 'function') {
+      s = s.toString();
+    } else {
+      s = '';
+    }
+  }
+  return String(s).replace(/\s+/g, ' ').trim();
 }
 
 function parsePrice(s) {
