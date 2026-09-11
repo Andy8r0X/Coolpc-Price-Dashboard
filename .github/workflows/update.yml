@@ -4,6 +4,16 @@ on:
   schedule:
     - cron: '0 20 * * *'      # 每天台灣 04:00
   workflow_dispatch:
+    inputs:
+      mode:
+        description: '執行模式'
+        type: choice
+        default: 'live'
+        required: true
+        options:
+          - live
+          - archive
+          - full
 
 permissions:
   contents: write
