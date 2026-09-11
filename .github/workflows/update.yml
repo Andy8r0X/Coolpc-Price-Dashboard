@@ -1,0 +1,88 @@
+name: Update CoolPC Dashboard
+
+on:
+  schedule:
+    # 每天 UTC 20:00 = 台灣 04:00
+    - cron: '0 20 * * *'
+    # 每週日 UTC 18:00 = 台灣 02:00 做歷史回補
+    - cron: '0 18 * * 0'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'live | archive | full'
+        default: 'live'
+        required: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root deps
+        run: npm ci || npm install
+
+      - name: Restore archive cache
+        uses: actions/cache@v4
+        with:
+          path: cache/archive
+          key: archive-${{ github.run_id }}
+          restore-keys: archive-
+
+      - name: Run scraper
+        env:
+          MODE: ${{ github.event.inputs.mode || 'live' }}
+        run: npm run scrape
+
+      - name: Process data
+        run: npm run process
+
+      - name: Copy data into frontend/public
+        run: |
+          mkdir -p frontend/public/data
+          cp -r data/*.json frontend/public/data/ 2>/dev/null || true
+          ls -la frontend/public/data
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci || npm install
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          ls -la frontend/out
+          ls -la frontend/out/data || true
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./frontend/out
+          publish_branch: gh-pages
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
+          commit_message: 'deploy: ${{ github.run_number }}'
+          force_orphan: true
