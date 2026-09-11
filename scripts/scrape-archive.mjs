@@ -10,8 +10,8 @@ const DOCS_DATA = path.join(ROOT, 'docs', 'data');
 const PRICES_DIR = path.join(DOCS_DATA, 'prices');
 const CACHE_DIR = path.join(ROOT, 'cache', 'archive');
 
-// 目標：只撈 2026-08-01 ~ 2026-09-30
-const START = process.env.START || '20260801';
+// 目標：只撈 2024-01-01 ~ 2026-09-30
+const START = process.env.START || '20240101';
 const END = process.env.END || '20260930';
 
 const TARGET = 'http://www.coolpc.com.tw/evaluate.php';
@@ -199,13 +199,33 @@ async function main() {
   console.log(`\n[main] 完成：成功 ${success}，失敗 ${failed}`);
 
   // 3. 存成分月檔案
-  for (const [month, snaps] of monthlyData) {
-    const file = path.join(PRICES_DIR, `${month}.json`);
-    // 排序
-    snaps.sort((a, b) => a.snapshotTime.localeCompare(b.snapshotTime));
-    await writeFile(file, JSON.stringify(snaps), 'utf8');
-    console.log(`[save] ${file} (${snaps.length} snapshots)`);
+for (const [month, snaps] of monthlyData) {
+  const file = path.join(PRICES_DIR, `${month}.json`);
+
+  // 讀取現有
+  let existing = [];
+  if (existsSync(file)) {
+    try {
+      existing = JSON.parse(await readFile(file, 'utf8'));
+    } catch {
+      existing = [];
+    }
   }
+
+  // 用 snapshotTime 去重合併
+  const seen = new Set(existing.map((s) => s.snapshotTime));
+  for (const s of snaps) {
+    if (!seen.has(s.snapshotTime)) {
+      existing.push(s);
+      seen.add(s.snapshotTime);
+    }
+  }
+
+  existing.sort((a, b) => a.snapshotTime.localeCompare(b.snapshotTime));
+
+  await writeFile(file, JSON.stringify(existing), 'utf8');
+  console.log(`[save] ${file} (${existing.length} snapshots)`);
+}
 }
 
 main().catch((e) => {
