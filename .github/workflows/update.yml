@@ -2,14 +2,8 @@ name: Update CoolPC Dashboard
 
 on:
   schedule:
-    - cron: '0 20 * * *'
-    - cron: '0 18 * * 0'
+    - cron: '0 20 * * *'      # 每天台灣 04:00
   workflow_dispatch:
-    inputs:
-      mode:
-        description: 'live | archive | full'
-        default: 'live'
-        required: true
 
 permissions:
   contents: write
@@ -21,66 +15,46 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-and-deploy:
+  update:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # 改用 Node 22，移除 cache: 'npm'，避免 lock file 錯誤
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Install root deps
+      - name: Install deps
         run: npm install
 
-      - name: Restore archive cache
-        uses: actions/cache@v4
-        with:
-          path: cache/archive
-          key: archive-${{ github.run_id }}
-          restore-keys: archive-
-
-      - name: Run scraper
-        env:
-          MODE: ${{ github.event.inputs.mode || 'live' }}
+      - name: Scrape
         run: npm run scrape
 
-      - name: Process data
+      - name: Process
         run: npm run process
 
-      - name: Copy data into frontend/public
+      - name: Commit data
         run: |
-          mkdir -p frontend/public/data
-          cp -r data/*.json frontend/public/data/ 2>/dev/null || true
-          ls -la frontend/public/data
-
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm install
-
-      - name: Build frontend
-        working-directory: frontend
-        env:
-          NODE_ENV: production
-        run: npm run build
-
-      - name: Verify build output
-        run: |
-          ls -la frontend/out
-          ls -la frontend/out/data || true
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/data/
+          if git diff --staged --quiet; then
+            echo "No data changes"
+          else
+            git commit -m "data: update $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            git push
+          fi
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./frontend/out
+          publish_dir: ./docs
           publish_branch: gh-pages
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
-          commit_message: 'deploy: ${{ github.run_number }}'
           force_orphan: true
